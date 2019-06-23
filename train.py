@@ -1,19 +1,18 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
-"""
+'''
 Created on Thu Jun 13 15:45:13 2019
 
 @author: yangzhenhuan
 
 Training Generative Adversarial Network with loss and first order algorithm 
-"""
+'''
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "6,7"
+import csv
 import argparse
-import pickle
 
-import model
+import models
 import utils
 
 import torch
@@ -25,35 +24,35 @@ from torch.utils.data import SubsetRandomSampler
 
 # Parse arguments for command line
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument("--out", action="store_true", help="if True store output to result")
-parser.add_argument("--dis", action="store_true", help="if True display training")
-parser.add_argument("--ds", default="cifar10", help="dataset")
-parser.add_argument("--po", type=float, default=0.1, help="portion of data to train")
-parser.add_argument("--arc", default="dcgan", help="architecture of GAN")
-parser.add_argument("--loss", default="gan", help="loss function of GAN")
-parser.add_argument("--alg", default="Adam", help="optimization algorithm")
-parser.add_argument("--ne", type=int, default=100, help="number of epochs of training")
-parser.add_argument("--bs", type=int, default=64, help="size of the batches")
-parser.add_argument("--sd", type=int, default=1234, help="random seed")
-parser.add_argument("--lrg", type=float, default=0.0002, help="learning rate of generator")
-parser.add_argument("--lrd", type=float, default=0.0002, help="learning rate of discriminator")
-parser.add_argument("--b1", type=float, default=0.5, help="Adam: decay of first order momentum of gradient")
-parser.add_argument("--b2", type=float, default=0.999, help="Adam: decay of first order momentum of gradient")
-parser.add_argument("--ka", type=float, default=1000.0, help="AccSGD: long step")
-parser.add_argument("--xi", type=float, default=10.0, help="AccSGD: Statistical advantage parameter between 1.0 to sqrt(ka)")
-parser.add_argument("--dv", type=int, default=1, help="gpu: device number")
-parser.add_argument("--ncpu", type=int, default=8, help="number of cpu threads to use during batch generation")
-parser.add_argument("--ngpu", type=int, default=8, help="number of gpu threads to use during batch generation")
-parser.add_argument("--nz", type=int, default=100, help="dimensionality of the latent space")
-parser.add_argument("--img", type=int, default=64, help="size of each image dimension")
-parser.add_argument("--nc", type=int, default=3, help="number of image channels")
-parser.add_argument("--nfd", type=int, default=64, help="number of filters of discriminator")
-parser.add_argument("--nfg", type=int, default=64, help="number of filters of generator")
-args = parser.parse_args()
+parser.add_argument('--v', action='store_true', help='if True verbose training')
+parser.add_argument('--ds', choices=('cifar10','mnist'), default='cifar10', help='dataset')
+parser.add_argument('--po', type=float, default=0.001, help='portion of data to train')
+parser.add_argument('--arc', choices=('dcgan'), default='dcgan', help='architecture of GAN')
+parser.add_argument('--loss', choices=('gan', 'lsgan'), default='gan', help='loss function of GAN')
+parser.add_argument('--alg', choices=('Adam', 'AdaGrad', 'ExtraSGD'), default='Adam', help='optimization algorithm')
+parser.add_argument('--ne', type=int, default=2, help='number of epochs of training')
+parser.add_argument('--bs', type=int, default=20, help='size of the batches')
+parser.add_argument('--sd', type=int, default=1234, help='random seed')
+parser.add_argument('--lrg', type=float, default=0.0002, help='learning rate of generator')
+parser.add_argument('--lrd', type=float, default=0.0002, help='learning rate of discriminator')
+parser.add_argument('--ema', type=float, default=0.9999, help='exponential moving average')
+parser.add_argument('--b1', type=float, default=0.5, help='Adam: decay of first order momentum of gradient')
+parser.add_argument('--b2', type=float, default=0.999, help='Adam: decay of first order momentum of gradient')
+parser.add_argument('--ka', type=float, default=1000.0, help='AccSGD: long step')
+parser.add_argument('--xi', type=float, default=10.0, help='AccSGD: Statistical advantage parameter between 1.0 to sqrt(ka)')
+parser.add_argument('--dv', type=int, default=1, help='gpu: device number')
+parser.add_argument('--nz', type=int, default=100, help='dimensionality of the latent space')
+parser.add_argument('--img', type=int, default=64, help='size of each image dimension')
+parser.add_argument('--nc', type=int, default=3, help='number of image channels')
+parser.add_argument('--nfd', type=int, default=64, help='number of filters of discriminator')
+parser.add_argument('--nfg', type=int, default=64, help='number of filters of generator')
+parser.add_argument('--ins', action='store_true', help='if True compute inception score')
+parser.add_argument('--fid', action='store_true', help='if True compute fid score')
+parser.add_argument('--save', action='store_true', help='if True save state every epoch')
+args = parser.parse_args(['--v'])
 
 # Define Hyper-parameter from 
-OUTPUT = args.out
-DISPLAY = args.dis
+VERBOSE = args.v
 DATA = args.ds
 PORTION = args.po
 ARCHITECTURE = args.arc
@@ -65,76 +64,90 @@ SEED = args.sd
 torch.manual_seed(SEED)
 LEARNING_RATE_G = args.lrg
 LEARNING_RATE_D = args.lrd
+BETA_EMA = args.ema
 BETA_1 = args.b1
 BETA_2 = args.b2
 KAPPA = args.ka
 XI = args.xi
 DEVICE = args.dv
-NUM_CPU = args.ncpu
-NUM_GPU = args.ngpu
 NUM_LATENT = args.nz
 IMAGE_SIZE = args.img
 NUM_CHANNELS = args.nc
 NUM_FILTER_G = args.nfg
 NUM_FILTER_D = args.nfd
+INCEPTION_SCORE_FLAG = args.ins
+FID_SCORE_FLAG = args.fid
+SAVE_FLAG = args.save
 
 # Define output location of one specific run
-if OUTPUT:
-    OUTPUT_PATH = "result"
-    OUTPUT_PATH = os.path.join(OUTPUT_PATH,"%s"%ARCHITECTURE, "%s"%LOSS, "%s"%ALG, "lrg=%.5e_lrd=%.5e"%(LEARNING_RATE_G,LEARNING_RATE_D))
-    if not os.path.exists(os.path.join(OUTPUT_PATH, 'checkpoints')):
-        os.makedirs(os.path.join(OUTPUT_PATH, 'checkpoints'))
-    if not os.path.exists(os.path.join(OUTPUT_PATH, 'loss')):
-        os.makedirs(os.path.join(OUTPUT_PATH, 'loss'))
+OUTPUT_PATH = 'result'
+OUTPUT_PATH = os.path.join(OUTPUT_PATH,'%s'%ARCHITECTURE, '%s'%LOSS, '%s'%ALG, 'lrg=%.5e_lrd=%.5e'%(LEARNING_RATE_G,LEARNING_RATE_D))
+if not os.path.exists(os.path.join(OUTPUT_PATH, 'checkpoints')):
+    os.makedirs(os.path.join(OUTPUT_PATH, 'checkpoints'))
+loss_f = open(os.path.join(OUTPUT_PATH, 'loss.csv'), 'ab')
+loss_writter = csv.writer(loss_f)
+    
+if INCEPTION_SCORE_FLAG or FID_SCORE_FLAG:
+    import libs
+    NUM_SAMPLES = 1000
+    fixed_noise = torch.randn(NUM_SAMPLES, NUM_LATENT, 1, 1, device=DEVICE)
+    
+    if INCEPTION_SCORE_FLAG:
+        inception_f = open(os.path.join(OUTPUT_PATH, 'inception_score.csv'), 'ab')
+        inception_writter = csv.writer(inception_f)
+    if FID_SCORE_FLAG:
+        fid_f = open(os.path.join(OUTPUT_PATH, 'fid_score.csv'), 'ab')
+        fid_writter = csv.writer(fid_f)
 
-print("Initializing...")
+print('Initializing...')
 # Load and transform data
 transform=transforms.Compose([transforms.Resize(IMAGE_SIZE),transforms.CenterCrop(IMAGE_SIZE),transforms.ToTensor(),transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-if DATA == "cifar10":
+if DATA == 'cifar10':
     trainset = dset.CIFAR10(root='./data', train=True, transform=transform, download=True)
     testset = dset.CIFAR10(root='./data', train=False, transform=transform, download=True)    
-elif DATA == "mnist":
+elif DATA == 'mnist':
     trainset = dset.MNIST(root='./data', train=True, transform=transform, download=True)
     testset = dset.MNIST(root='./data', train=False, transform=transform, download=True)
+    NUM_CHANNELS = 1
 indices = list(range(int(len(trainset)*PORTION)))
 trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, sampler=SubsetRandomSampler(indices), num_workers=0)
 testloader = DataLoader(testset, batch_size=BATCH_SIZE, num_workers=0)
 
 # Decide which device we want to run on
-device = torch.device("cuda:%i"%DEVICE if (torch.cuda.is_available() and NUM_GPU> 0) else "cpu")
+device = torch.device('cuda:%i'%DEVICE if torch.cuda.is_available() else 'cpu')
 print(device)
 
-# Define and initialize model
-if ARCHITECTURE == "dcgan":
-    netG = model.dcgan.Generator(NUM_GPU,nc=NUM_CHANNELS, nfg=NUM_FILTER_G).to(device)
-    netD = model.dcgan.Discriminator(NUM_GPU,nc=NUM_CHANNELS, nfd=NUM_FILTER_D).to(device)
-    netG.apply(utils.weights_init)
-    netD.apply(utils.weights_init)
-    print(netG)
-    print(netD)
+# Define and initialize models
+if ARCHITECTURE == 'dcgan':
+    netG = models.dcgan.Generator(nc=NUM_CHANNELS, nfg=NUM_FILTER_G).to(device)
+    netD = models.dcgan.Discriminator(nc=NUM_CHANNELS, nfd=NUM_FILTER_D).to(device)
+netG.apply(utils.weights_init)
+netD.apply(utils.weights_init)
+print(netG)
+print(netD)
 
 # Define optimizer 
-if ALG == "Adam":
+if ALG == 'Adam':
     import torch.optim as optim
     optG = optim.Adam(netG.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
     optD = optim.Adam(netD.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
-elif ALG == "AccSGD":
+elif ALG == 'AccSGD':
     import optim
     optG = optim.AccSGD(netG.parameters(), lr=LEARNING_RATE_G, kappa = KAPPA, xi = XI)
     optD = optim.AccSGD(netD.parameters(), lr=LEARNING_RATE_D, kappa = KAPPA, xi = XI)
-elif ALG == "Adagrad":
+elif ALG == 'Adagrad':
     import torch.optim as optim
     optG = optim.Adagrad(netG.parameters(), lr=LEARNING_RATE_G)
     optD = optim.Adagrad(netD.parameters(), lr=LEARNING_RATE_D)
-elif ALG == "ExtraSGD":
+elif ALG == 'ExtraSGD':
     import optim
     optG = optim.ExtraSGD(netG.parameters(), lr=LEARNING_RATE_G)
     optD = optim.ExtraSGD(netD.parameters(), lr=LEARNING_RATE_D)
 
 # Initialize Loss function
-if LOSS == "gan":
+if LOSS == 'gan':
     criterion = nn.BCELoss()
-elif LOSS == "lsgan":
+elif LOSS == 'lsgan':
     criterion = nn.MSELoss()
 
 # Establish convention for real and fake labels during training
@@ -142,12 +155,15 @@ real_label = 1
 fake_label = 0
 
 # Lists to keep track of progress
-img_list = []
-lossG = []
-lossD = []
+netG_param_avg = []
+netG_param_ema = []
+for param in netG.parameters():
+    netG_param_avg.append(param.data.clone())
+    netG_param_ema.append(param.data.clone())
+
 iters = 0
 
-print("Starting Training Loop...")
+print('Starting Training Loop...')
 # For each epoch
 for epoch in range(NUM_EPOCH):
     # For each batch in the dataloader
@@ -186,7 +202,7 @@ for epoch in range(NUM_EPOCH):
         # Add the gradients from the all-real and all-fake batches
         errD = errD_real + errD_fake
         # Update D
-        if ALG == "ExtraSGD":
+        if ALG == 'ExtraSGD':
             if (i+1)%2:
                 optD.extrapolation()
             else:
@@ -207,7 +223,7 @@ for epoch in range(NUM_EPOCH):
         errG.backward()
         D_G_z2 = output.mean().item()
         # Update G
-        if ALG == "ExtraSGD":
+        if ALG == 'ExtraSGD':
             if (i+1)%2:
                 optG.extrapolation()
             else:
@@ -215,23 +231,29 @@ for epoch in range(NUM_EPOCH):
         else:
             optG.step()
         
-        # Output training stats
-        if (i % 10 == 0) and DISPLAY:
-            print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
-                  % (epoch, NUM_EPOCH, i, len(trainloader),
-                     errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
-
-        # Save Losses for plotting later
-        lossG.append(errG.item())
-        lossD.append(errD.item())
-        
         iters += 1
-    
-    if OUTPUT:    
-        #https://stackoverflow.com/questions/42703500/best-way-to-save-a-trained-model-in-pytorch
-        torch.save({'args': vars(args), 'state_gen': netG.state_dict()}, os.path.join(OUTPUT_PATH, "checkpoints/gen-%i.state"%epoch))
-        torch.save({'args': vars(args), 'state_dis': netD.state_dict()}, os.path.join(OUTPUT_PATH, "checkpoints/dis-%i.state"%epoch))
-
-if OUTPUT:    
-    pickle.dump(lossG,open(os.path.join(OUTPUT_PATH, "loss/gen.p"),"wb"))
-    pickle.dump(lossD,open(os.path.join(OUTPUT_PATH, "loss/dis.p"),"wb"))
+        
+        for j, param in enumerate(netG.parameters()):
+                netG_param_avg[j] = netG_param_avg[j]*iters/(iters+1.) + param.data.clone()/(iters+1.)
+                netG_param_ema[j] = netG_param_ema[j]*BETA_EMA+ param.data.clone()*(1-BETA_EMA)
+        
+        # Output training stats
+        if i % 10 == 0: 
+            if VERBOSE:
+                print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f' 
+                      % (epoch, NUM_EPOCH, i, len(trainloader), errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
+            loss_writter.writerow((errD.item(), errG.item()))
+            loss_f.flush()
+            if INCEPTION_SCORE_FLAG or FID_SCORE_FLAG:
+                fake_imgs = netG(fixed_noise).detach().cpu()
+                if INCEPTION_SCORE_FLAG:
+                    inception_writter.writerow(libs.get_inception_score(fake_imgs))
+                    inception_f.flush()
+                if FID_SCORE_FLAG:
+                    fid_writter.writerow(libs.get_fid_score(fake_imgs))
+                    fid_f.flush()
+                
+    if SAVE_FLAG:    
+        #https://stackoverflow.com/questions/42703500/best-way-to-save-a-trained-models-in-pytorch
+        torch.save({'args': vars(args), 'state_gen': netG.state_dict(), 'param_avg': netG_param_avg, 'param_ema': netG_param_ema}, os.path.join(OUTPUT_PATH, 'checkpoints/gen-%i.state'%epoch))
+        torch.save({'args': vars(args), 'state_dis': netD.state_dict()}, os.path.join(OUTPUT_PATH, 'checkpoints/dis-%i.state'%epoch))
