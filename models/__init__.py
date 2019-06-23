@@ -1,2 +1,2 @@
 from dcgan import *
-from resnet import *
+from inception import *
