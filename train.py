@@ -250,7 +250,7 @@ for epoch in range(NUM_EPOCH):
                     inception_writter.writerow(lib.get_inception_score(fake_imgs))
                     inception_f.flush()
                 if FID_SCORE_FLAG:
-                    fid_writter.writerow(lib.get_fid_score(fake_imgs))
+                    fid_writter.writerow([lib.get_fid_score(fake_imgs)])
                     fid_f.flush()
                 
     if SAVE_FLAG:    
