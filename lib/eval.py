@@ -187,7 +187,7 @@ def _calculate_activation_statistics(imgs, model, batch_size=50,
 def get_fid_score(imgs, batch_size=50, dims=2048, cuda=False, verbose=False):
     """Calculates the FID of two paths"""
     
-    stats_path = 'libs/data/fid_stats_cifar10_train.npz'
+    stats_path = 'lib/data/fid_stats_cifar10_train.npz'
     f = np.load(stats_path)
     m1, s1 = f['mu'][:], f['sigma'][:]
     f.close()
