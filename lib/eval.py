@@ -48,7 +48,7 @@ except ImportError:
     # If not tqdm is not available, provide a mock version of it
     def tqdm(x): return x
 #from models import lenet
-from libs.inception import InceptionV3
+from lib.inception import InceptionV3
 
 
 def _get_preds(imgs, model, batch_size=50, dims=2048, cuda=False, verbose=False):
