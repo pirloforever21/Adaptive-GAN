@@ -2,9 +2,7 @@
 # -*- coding: utf-8 -*-
 '''
 Created on Thu Jun 13 15:45:13 2019
-
 @author: yangzhenhuan
-
 Training Generative Adversarial Network with loss and first order algorithm 
 '''
 
@@ -27,12 +25,12 @@ from torch.utils.data import SubsetRandomSampler
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--v', action='store_true', help='if True verbose training')
 parser.add_argument('--ds', choices=('cifar10','mnist'), default='cifar10', help='dataset')
-parser.add_argument('--po', type=float, default=0.1, help='portion of data to train')
+parser.add_argument('--po', type=float, default=0.001, help='portion of data to train')
 parser.add_argument('--arc', choices=('dcgan'), default='dcgan', help='architecture of GAN')
 parser.add_argument('--loss', choices=('gan', 'lsgan'), default='gan', help='loss function of GAN')
-parser.add_argument('--alg', choices=('Adam', 'AdaGrad', 'ExtraSGD'), default='Adam', help='optimization algorithm')
-parser.add_argument('--ne', type=int, default=100, help='number of epochs of training')
-parser.add_argument('--bs', type=int, default=50, help='size of the batches')
+parser.add_argument('--alg', choices=('Adam', 'AdaGrad', 'ExtraSGD','ExtraAdam'), default='Adam', help='optimization algorithm')
+parser.add_argument('--ne', type=int, default=10, help='number of epochs of training')
+parser.add_argument('--bs', type=int, default=5, help='size of the batches')
 parser.add_argument('--sd', type=int, default=1234, help='random seed')
 parser.add_argument('--lrg', type=float, default=0.0002, help='learning rate of generator')
 parser.add_argument('--lrd', type=float, default=0.0002, help='learning rate of discriminator')
@@ -50,7 +48,7 @@ parser.add_argument('--nfg', type=int, default=64, help='number of filters of ge
 parser.add_argument('--ins', action='store_true', help='if True compute inception score')
 parser.add_argument('--fid', action='store_true', help='if True compute fid score')
 parser.add_argument('--save', action='store_true', help='if True save state every epoch')
-args = parser.parse_args()
+args = parser.parse_args(['--v','--ins'])
 
 # Define Hyper-parameter from 
 VERBOSE = args.v
@@ -123,8 +121,6 @@ if ARCHITECTURE == 'dcgan':
     netD = models.dcgan.Discriminator(nc=NUM_CHANNELS, nfd=NUM_FILTER_D).to(device)
 netG.apply(utils.weights_init)
 netD.apply(utils.weights_init)
-print(netG)
-print(netD)
 
 # Define optimizer 
 if ALG == 'Adam':
@@ -143,6 +139,10 @@ elif ALG == 'ExtraSGD':
     import optim
     optG = optim.ExtraSGD(netG.parameters(), lr=LEARNING_RATE_G)
     optD = optim.ExtraSGD(netD.parameters(), lr=LEARNING_RATE_D)
+elif ALG == 'ExtraAdam':
+    import optim
+    optG = optim.ExtraAdam(netG.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
+    optD = optim.ExtraAdam(netD.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
 
 # Initialize Loss function
 if LOSS == 'gan':
@@ -202,7 +202,7 @@ for epoch in range(NUM_EPOCH):
         # Add the gradients from the all-real and all-fake batches
         errD = errD_real + errD_fake
         # Update D
-        if ALG == 'ExtraSGD':
+        if ALG == 'ExtraSGD' or 'ExtraAdam':
             if (i+1)%2:
                 optD.extrapolation()
             else:
@@ -223,15 +223,15 @@ for epoch in range(NUM_EPOCH):
         errG.backward()
         D_G_z2 = output.mean().item()
         # Update G
-        if ALG == 'ExtraSGD':
+        if ALG == 'ExtraSGD' or 'ExtraAdam':
             if (i+1)%2:
                 optG.extrapolation()
             else:
                 optG.step()
+                iters += 1
         else:
             optG.step()
-        
-        iters += 1
+            iters += 1
         
         for j, param in enumerate(netG.parameters()):
                 netG_param_avg[j] = netG_param_avg[j]*iters/(iters+1.) + param.data.clone()/(iters+1.)
