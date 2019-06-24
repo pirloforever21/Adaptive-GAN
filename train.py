@@ -244,14 +244,14 @@ for epoch in range(NUM_EPOCH):
                       % (epoch, NUM_EPOCH, i, len(trainloader), errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
             loss_writter.writerow((errD.item(), errG.item()))
             loss_f.flush()
-            if INCEPTION_SCORE_FLAG or FID_SCORE_FLAG:
-                fake_imgs = netG(fixed_noise).detach().cpu()
-                if INCEPTION_SCORE_FLAG:
-                    inception_writter.writerow(lib.get_inception_score(fake_imgs))
-                    inception_f.flush()
-                if FID_SCORE_FLAG:
-                    fid_writter.writerow([lib.get_fid_score(fake_imgs)])
-                    fid_f.flush()
+    if INCEPTION_SCORE_FLAG or FID_SCORE_FLAG:
+        fake_imgs = netG(fixed_noise).detach().cpu()
+    if INCEPTION_SCORE_FLAG:
+        inception_writter.writerow(lib.get_inception_score(fake_imgs))
+        inception_f.flush()
+    if FID_SCORE_FLAG:
+        fid_writter.writerow([lib.get_fid_score(fake_imgs)])
+        fid_f.flush()
                 
     if SAVE_FLAG:    
         #https://stackoverflow.com/questions/42703500/best-way-to-save-a-trained-models-in-pytorch
