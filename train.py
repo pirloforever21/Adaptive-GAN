@@ -27,12 +27,12 @@ from torch.utils.data import SubsetRandomSampler
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--v', action='store_true', help='if True verbose training')
 parser.add_argument('--ds', choices=('cifar10','mnist'), default='cifar10', help='dataset')
-parser.add_argument('--po', type=float, default=0.001, help='portion of data to train')
+parser.add_argument('--po', type=float, default=0.1, help='portion of data to train')
 parser.add_argument('--arc', choices=('dcgan'), default='dcgan', help='architecture of GAN')
 parser.add_argument('--loss', choices=('gan', 'lsgan'), default='gan', help='loss function of GAN')
 parser.add_argument('--alg', choices=('Adam', 'AdaGrad', 'ExtraSGD'), default='Adam', help='optimization algorithm')
-parser.add_argument('--ne', type=int, default=2, help='number of epochs of training')
-parser.add_argument('--bs', type=int, default=20, help='size of the batches')
+parser.add_argument('--ne', type=int, default=100, help='number of epochs of training')
+parser.add_argument('--bs', type=int, default=50, help='size of the batches')
 parser.add_argument('--sd', type=int, default=1234, help='random seed')
 parser.add_argument('--lrg', type=float, default=0.0002, help='learning rate of generator')
 parser.add_argument('--lrd', type=float, default=0.0002, help='learning rate of discriminator')
@@ -41,7 +41,7 @@ parser.add_argument('--b1', type=float, default=0.5, help='Adam: decay of first 
 parser.add_argument('--b2', type=float, default=0.999, help='Adam: decay of first order momentum of gradient')
 parser.add_argument('--ka', type=float, default=1000.0, help='AccSGD: long step')
 parser.add_argument('--xi', type=float, default=10.0, help='AccSGD: Statistical advantage parameter between 1.0 to sqrt(ka)')
-parser.add_argument('--dv', type=int, default=1, help='gpu: device number')
+parser.add_argument('--dv', type=int, default=0, help='gpu: device number')
 parser.add_argument('--nz', type=int, default=100, help='dimensionality of the latent space')
 parser.add_argument('--img', type=int, default=64, help='size of each image dimension')
 parser.add_argument('--nc', type=int, default=3, help='number of image channels')
@@ -50,7 +50,7 @@ parser.add_argument('--nfg', type=int, default=64, help='number of filters of ge
 parser.add_argument('--ins', action='store_true', help='if True compute inception score')
 parser.add_argument('--fid', action='store_true', help='if True compute fid score')
 parser.add_argument('--save', action='store_true', help='if True save state every epoch')
-args = parser.parse_args(['--v'])
+args = parser.parse_args()
 
 # Define Hyper-parameter from 
 VERBOSE = args.v
@@ -87,10 +87,14 @@ if not os.path.exists(os.path.join(OUTPUT_PATH, 'checkpoints')):
     os.makedirs(os.path.join(OUTPUT_PATH, 'checkpoints'))
 loss_f = open(os.path.join(OUTPUT_PATH, 'loss.csv'), 'ab')
 loss_writter = csv.writer(loss_f)
+
+# Decide which device we want to run on
+device = torch.device('cuda:%i'%DEVICE if torch.cuda.is_available() else 'cpu')
+print(device)
     
 if INCEPTION_SCORE_FLAG or FID_SCORE_FLAG:
     NUM_SAMPLES = 1000
-    fixed_noise = torch.randn(NUM_SAMPLES, NUM_LATENT, 1, 1, device=DEVICE)
+    fixed_noise = torch.randn(NUM_SAMPLES, NUM_LATENT, 1, 1, device=device)
     
     if INCEPTION_SCORE_FLAG:
         inception_f = open(os.path.join(OUTPUT_PATH, 'inception_score.csv'), 'ab')
@@ -112,10 +116,6 @@ elif DATA == 'mnist':
 indices = list(range(int(len(trainset)*PORTION)))
 trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, sampler=SubsetRandomSampler(indices), num_workers=0)
 testloader = DataLoader(testset, batch_size=BATCH_SIZE, num_workers=0)
-
-# Decide which device we want to run on
-device = torch.device('cuda:%i'%DEVICE if torch.cuda.is_available() else 'cpu')
-print(device)
 
 # Define and initialize models
 if ARCHITECTURE == 'dcgan':
