@@ -13,6 +13,7 @@ import csv
 import argparse
 
 import models
+import lib
 import utils
 
 import torch
@@ -88,7 +89,6 @@ loss_f = open(os.path.join(OUTPUT_PATH, 'loss.csv'), 'ab')
 loss_writter = csv.writer(loss_f)
     
 if INCEPTION_SCORE_FLAG or FID_SCORE_FLAG:
-    import libs
     NUM_SAMPLES = 1000
     fixed_noise = torch.randn(NUM_SAMPLES, NUM_LATENT, 1, 1, device=DEVICE)
     
@@ -247,10 +247,10 @@ for epoch in range(NUM_EPOCH):
             if INCEPTION_SCORE_FLAG or FID_SCORE_FLAG:
                 fake_imgs = netG(fixed_noise).detach().cpu()
                 if INCEPTION_SCORE_FLAG:
-                    inception_writter.writerow(libs.get_inception_score(fake_imgs))
+                    inception_writter.writerow(lib.get_inception_score(fake_imgs))
                     inception_f.flush()
                 if FID_SCORE_FLAG:
-                    fid_writter.writerow(libs.get_fid_score(fake_imgs))
+                    fid_writter.writerow(lib.get_fid_score(fake_imgs))
                     fid_f.flush()
                 
     if SAVE_FLAG:    
