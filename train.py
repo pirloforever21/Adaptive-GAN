@@ -48,7 +48,7 @@ parser.add_argument('--nfg', type=int, default=64, help='number of filters of ge
 parser.add_argument('--ins', action='store_true', help='if True compute inception score')
 parser.add_argument('--fid', action='store_true', help='if True compute fid score')
 parser.add_argument('--save', action='store_true', help='if True save state every epoch')
-args = parser.parse_args(['--v','--ins'])
+args = parser.parse_args()
 
 # Define Hyper-parameter from 
 VERBOSE = args.v
@@ -79,7 +79,7 @@ FID_SCORE_FLAG = args.fid
 SAVE_FLAG = args.save
 
 # Define output location of one specific run
-OUTPUT_PATH = 'result'
+OUTPUT_PATH = 'results'
 OUTPUT_PATH = os.path.join(OUTPUT_PATH,'%s'%ARCHITECTURE, '%s'%LOSS, '%s'%ALG, 'lrg=%.5e_lrd=%.5e'%(LEARNING_RATE_G,LEARNING_RATE_D))
 if not os.path.exists(os.path.join(OUTPUT_PATH, 'checkpoints')):
     os.makedirs(os.path.join(OUTPUT_PATH, 'checkpoints'))
