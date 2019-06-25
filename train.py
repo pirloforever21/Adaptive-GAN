@@ -202,7 +202,8 @@ for epoch in range(NUM_EPOCH):
         # Add the gradients from the all-real and all-fake batches
         errD = errD_real + errD_fake
         # Update D
-        if ALG == 'ExtraSGD' or 'ExtraAdam':
+        # https://stackoverflow.com/questions/20002503/why-does-a-b-or-c-or-d-always-evaluate-to-true
+        if ALG == 'ExtraSGD' or ALG == 'ExtraAdam':
             if (i+1)%2:
                 optD.extrapolation()
             else:
@@ -223,7 +224,7 @@ for epoch in range(NUM_EPOCH):
         errG.backward()
         D_G_z2 = output.mean().item()
         # Update G
-        if ALG == 'ExtraSGD' or 'ExtraAdam':
+        if ALG == 'ExtraSGD' or ALG == 'ExtraAdam':
             if (i+1)%2:
                 optG.extrapolation()
             else:
