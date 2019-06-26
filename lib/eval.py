@@ -2,9 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Fri Jun 21 01:04:49 2019
-
 @author: yangzhenhuan
-
 Calculates the Frechet Inception Distance (FID) to evalulate GANs
 The FID metric calculates the distance between two distributions of images.
 Typically, we have summary statistics (mean & covariance matrix) of one
@@ -31,9 +29,6 @@ limitations under the License.
 """
 
 from __future__ import print_function
-
-import os
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 import numpy as np
 import torch
