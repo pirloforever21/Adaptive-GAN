@@ -1,99 +1,137 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
-'''
-Created on Thu Jun 13 15:45:13 2019
-@author: yangzhenhuan
-Training Generative Adversarial Network with loss and first order algorithm 
-'''
+#  MIT License
 
-import os
-import csv
-import argparse
+# Copyright (c) Facebook, Inc. and its affiliates.
 
-import models
-import lib
-import utils
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# written by Hugo Berard (berard.hugo@gmail.com) while at Facebook.
 
 import torch
-import torch.nn as nn
+import time
+from torch.autograd import Variable
+import torchvision
 import torchvision.transforms as transforms
-import torchvision.datasets as dset
-from torch.utils.data import DataLoader
-from torch.utils.data import SubsetRandomSampler
+import numpy as np
+import argparse
+import os
+import json
+import csv
 
-# Parse arguments for command line
-parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('--v', action='store_true', help='if True verbose training')
-parser.add_argument('--ds', choices=('cifar10','mnist'), default='cifar10', help='dataset')
-parser.add_argument('--po', type=float, default=0.001, help='portion of data to train')
-parser.add_argument('--arc', choices=('dcgan'), default='dcgan', help='architecture of GAN')
-parser.add_argument('--loss', choices=('gan', 'lsgan'), default='gan', help='loss function of GAN')
-parser.add_argument('--alg', choices=('Adam', 'AdaGrad', 'ExtraSGD','ExtraAdam'), default='Adam', help='optimization algorithm')
-parser.add_argument('--ne', type=int, default=10, help='number of epochs of training')
-parser.add_argument('--bs', type=int, default=5, help='size of the batches')
-parser.add_argument('--sd', type=int, default=1234, help='random seed')
-parser.add_argument('--lrg', type=float, default=0.0002, help='learning rate of generator')
-parser.add_argument('--lrd', type=float, default=0.0002, help='learning rate of discriminator')
-parser.add_argument('--ema', type=float, default=0.9999, help='exponential moving average')
-parser.add_argument('--b1', type=float, default=0.5, help='Adam: decay of first order momentum of gradient')
-parser.add_argument('--b2', type=float, default=0.999, help='Adam: decay of first order momentum of gradient')
-parser.add_argument('--ka', type=float, default=1000.0, help='AccSGD: long step')
-parser.add_argument('--xi', type=float, default=10.0, help='AccSGD: Statistical advantage parameter between 1.0 to sqrt(ka)')
-parser.add_argument('--dv', type=int, default=0, help='gpu: device number')
-parser.add_argument('--nz', type=int, default=100, help='dimensionality of the latent space')
-parser.add_argument('--img', type=int, default=64, help='size of each image dimension')
-parser.add_argument('--nc', type=int, default=3, help='number of image channels')
-parser.add_argument('--nfd', type=int, default=64, help='number of filters of discriminator')
-parser.add_argument('--nfg', type=int, default=64, help='number of filters of generator')
-parser.add_argument('--ins', action='store_true', help='if True compute inception score')
-parser.add_argument('--fid', action='store_true', help='if True compute fid score')
-parser.add_argument('--save', action='store_true', help='if True save state every epoch')
+import models
+import utils
+import lib
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--model', choices=('resnet', 'dcgan'), default='dcgan')
+parser.add_argument('-alg', '--algorithm', choices=('Adam','ExtraAdam','OptimisticAdam'), default='Adam')
+parser.add_argument('--cuda', action='store_true')
+parser.add_argument('-bs' ,'--batch-size', default=4, type=int)
+parser.add_argument('--num-iter', default=500, type=int)
+parser.add_argument('-lrd', '--learning-rate-dis', default=2e-4, type=float)
+parser.add_argument('-lrg', '--learning-rate-gen', default=2e-5, type=float)
+parser.add_argument('-b1' ,'--beta1', default=0.5, type=float)
+parser.add_argument('-b2' ,'--beta2', default=0.9, type=float)
+parser.add_argument('-ema', default=0.9999, type=float)
+parser.add_argument('-nz' ,'--num-latent', default=128, type=int)
+parser.add_argument('-nfd' ,'--num-filters-dis', default=128, type=int)
+parser.add_argument('-nfg' ,'--num-filters-gen', default=128, type=int)
+parser.add_argument('-gp', '--gradient-penalty', default=10, type=float)
+parser.add_argument('-m', '--mode', choices=('gan','ns-gan', 'wgan'), default='wgan')
+parser.add_argument('-c', '--clip', default=0.01, type=float)
+parser.add_argument('-d', '--distribution', choices=('normal', 'uniform'), default='normal')
+parser.add_argument('--batchnorm-dis', action='store_true')
+parser.add_argument('--seed', default=1234, type=int)
+parser.add_argument('--inception-score', action='store_true')
+parser.add_argument('--fid-score', action='store_true')
+parser.add_argument('--default', action='store_true')
+parser.add_argument('--save', action='store_true')
 args = parser.parse_args()
 
-# Define Hyper-parameter from 
-VERBOSE = args.v
-DATA = args.ds
-PORTION = args.po
-ARCHITECTURE = args.arc
-LOSS = args.loss
-ALG = args.alg
-NUM_EPOCH = args.ne
-BATCH_SIZE = args.bs
-SEED = args.sd
-torch.manual_seed(SEED)
-LEARNING_RATE_G = args.lrg
-LEARNING_RATE_D = args.lrd
-BETA_EMA = args.ema
-BETA_1 = args.b1
-BETA_2 = args.b2
-KAPPA = args.ka
-XI = args.xi
-DEVICE = args.dv
-NUM_LATENT = args.nz
-IMAGE_SIZE = args.img
-NUM_CHANNELS = args.nc
-NUM_FILTER_G = args.nfg
-NUM_FILTER_D = args.nfd
-INCEPTION_SCORE_FLAG = args.ins
-FID_SCORE_FLAG = args.fid
+CUDA = args.cuda
+ALGORITHM = args.algorithm
+MODEL = args.model
+MODE = args.mode
+GRADIENT_PENALTY = args.gradient_penalty
+INCEPTION_SCORE_FLAG = args.inception_score
+FID_SCORE_FLAG = args.fid_score
+DEFAULT = args.default
 SAVE_FLAG = args.save
 
-# Define output location of one specific run
+if DEFAULT:
+    try:
+        if GRADIENT_PENALTY:
+            config = "config/default_%s_%s-gp_%s.json"%(MODEL, MODE, ALGORITHM)
+        else:
+            config = "config/default_%s_%s_%s.json"%(MODEL, MODE, ALGORITHM)
+    except:
+        raise ValueError("Not default config available under the current setting")
+
+    with open(config) as f:
+        data = json.load(f)
+    args = argparse.Namespace(**data) # Will flush the original namespace
+
+BATCH_SIZE = args.batch_size
+N_ITER = args.num_iter
+LEARNING_RATE_G = args.learning_rate_gen # It is really important to set different learning rates for the discriminator and generator
+LEARNING_RATE_D = args.learning_rate_dis
+BETA_1 = args.beta1
+BETA_2 = args.beta2
+BETA_EMA = args.ema
+N_LATENT = args.num_latent
+N_FILTERS_G = args.num_filters_gen
+N_FILTERS_D = args.num_filters_dis
+CLIP = args.clip
+DISTRIBUTION = args.distribution
+BATCH_NORM_G = True
+BATCH_NORM_D = args.batchnorm_dis
+N_SAMPLES = 100
+N_CHANNEL = 3
+START_EPOCH = 0
+EVAL_FREQ = 1
+SEED = args.seed
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+n_gen_update = 0
+n_dis_update = 0
+total_time = 0
+
 OUTPUT_PATH = 'results'
-OUTPUT_PATH = os.path.join(OUTPUT_PATH,'%s'%ARCHITECTURE, '%s'%LOSS, '%s'%ALG, 'lrg=%.5e_lrd=%.5e'%(LEARNING_RATE_G,LEARNING_RATE_D))
+if GRADIENT_PENALTY:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s/%s-gp'%(MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i'%(ALGORITHM, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+else:
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, '%s/%s'%(MODEL, MODE), '%s/lrd=%.1e_lrg=%.1e/s%i/%i'%(ALGORITHM, LEARNING_RATE_D, LEARNING_RATE_G, SEED, int(time.time())))
+
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))])
+
+trainset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform, download=True)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+
+testset = torchvision.datasets.CIFAR10(root='./data', train=False, transform=transform, download=True)
+testloader = torch.utils.data.DataLoader(testset, batch_size=BATCH_SIZE, num_workers=0)
+
+print 'Init....'
 if not os.path.exists(os.path.join(OUTPUT_PATH, 'checkpoints')):
     os.makedirs(os.path.join(OUTPUT_PATH, 'checkpoints'))
-loss_f = open(os.path.join(OUTPUT_PATH, 'loss.csv'), 'ab')
-loss_writter = csv.writer(loss_f)
+if not os.path.exists(os.path.join(OUTPUT_PATH, 'gen')):
+    os.makedirs(os.path.join(OUTPUT_PATH, 'gen'))
 
-# Decide which device we want to run on
-device = torch.device('cuda:%i'%DEVICE if torch.cuda.is_available() else 'cpu')
-print(device)
-    
 if INCEPTION_SCORE_FLAG or FID_SCORE_FLAG:
-    NUM_SAMPLES = 1000
-    fixed_noise = torch.randn(NUM_SAMPLES, NUM_LATENT, 1, 1, device=device)
-    
     if INCEPTION_SCORE_FLAG:
         inception_f = open(os.path.join(OUTPUT_PATH, 'inception_score.csv'), 'ab')
         inception_writter = csv.writer(inception_f)
@@ -101,160 +139,160 @@ if INCEPTION_SCORE_FLAG or FID_SCORE_FLAG:
         fid_f = open(os.path.join(OUTPUT_PATH, 'fid_score.csv'), 'ab')
         fid_writter = csv.writer(fid_f)
 
-print('Initializing...')
-# Load and transform data
-transform=transforms.Compose([transforms.Resize(IMAGE_SIZE),transforms.CenterCrop(IMAGE_SIZE),transforms.ToTensor(),transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-if DATA == 'cifar10':
-    trainset = dset.CIFAR10(root='./data', train=True, transform=transform, download=True)
-    testset = dset.CIFAR10(root='./data', train=False, transform=transform, download=True)    
-elif DATA == 'mnist':
-    trainset = dset.MNIST(root='./data', train=True, transform=transform, download=True)
-    testset = dset.MNIST(root='./data', train=False, transform=transform, download=True)
-    NUM_CHANNELS = 1
-indices = list(range(int(len(trainset)*PORTION)))
-trainloader = DataLoader(trainset, batch_size=BATCH_SIZE, sampler=SubsetRandomSampler(indices), num_workers=0)
-testloader = DataLoader(testset, batch_size=BATCH_SIZE, num_workers=0)
+if MODEL == "resnet":
+    gen = models.ResNet32Generator(N_LATENT, N_CHANNEL, N_FILTERS_G, BATCH_NORM_G)
+    dis = models.ResNet32Discriminator(N_CHANNEL, 1, N_FILTERS_D, BATCH_NORM_D)
+elif MODEL == "dcgan":
+    gen = models.DCGAN32Generator(N_LATENT, N_CHANNEL, N_FILTERS_G, batchnorm=BATCH_NORM_G)
+    dis = models.DCGAN32Discriminator(N_CHANNEL, 1, N_FILTERS_D, batchnorm=BATCH_NORM_D)
 
-# Define and initialize models
-if ARCHITECTURE == 'dcgan':
-    netG = models.dcgan.Generator(nc=NUM_CHANNELS, nfg=NUM_FILTER_G).to(device)
-    netD = models.dcgan.Discriminator(nc=NUM_CHANNELS, nfd=NUM_FILTER_D).to(device)
-netG.apply(utils.weights_init)
-netD.apply(utils.weights_init)
+if CUDA:
+    gen = gen.cuda(0)
+    dis = dis.cuda(0)
 
-# Define optimizer 
-if ALG == 'Adam':
+gen.apply(lambda x: utils.weight_init(x, mode='normal'))
+dis.apply(lambda x: utils.weight_init(x, mode='normal'))
+
+if ALGORITHM == 'Adam':
     import torch.optim as optim
-    optG = optim.Adam(netG.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
-    optD = optim.Adam(netD.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
-elif ALG == 'AccSGD':
+    dis_optimizer = optim.Adam(dis.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
+    gen_optimizer = optim.Adam(gen.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
+elif ALGORITHM == 'ExtraAdam':
     import optim
-    optG = optim.AccSGD(netG.parameters(), lr=LEARNING_RATE_G, kappa = KAPPA, xi = XI)
-    optD = optim.AccSGD(netD.parameters(), lr=LEARNING_RATE_D, kappa = KAPPA, xi = XI)
-elif ALG == 'Adagrad':
-    import torch.optim as optim
-    optG = optim.Adagrad(netG.parameters(), lr=LEARNING_RATE_G)
-    optD = optim.Adagrad(netD.parameters(), lr=LEARNING_RATE_D)
-elif ALG == 'ExtraSGD':
-    import optim
-    optG = optim.ExtraSGD(netG.parameters(), lr=LEARNING_RATE_G)
-    optD = optim.ExtraSGD(netD.parameters(), lr=LEARNING_RATE_D)
-elif ALG == 'ExtraAdam':
-    import optim
-    optG = optim.ExtraAdam(netG.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
-    optD = optim.ExtraAdam(netD.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
+    dis_optimizer = optim.ExtraAdam(dis.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
+    gen_optimizer = optim.ExtraAdam(gen.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
 
-# Initialize Loss function
-if LOSS == 'gan':
-    criterion = nn.BCELoss()
-elif LOSS == 'lsgan':
-    criterion = nn.MSELoss()
+with open(os.path.join(OUTPUT_PATH, 'config.json'), 'wb') as f:
+    json.dump(vars(args), f)
 
-# Establish convention for real and fake labels during training
-real_label = 1
-fake_label = 0
+dataiter = iter(testloader)
+examples, labels = dataiter.next()
+torchvision.utils.save_image(utils.unormalize(examples), os.path.join(OUTPUT_PATH, 'examples.png'), 10)
 
-# Lists to keep track of progress
-netG_param_avg = []
-netG_param_ema = []
-for param in netG.parameters():
-    netG_param_avg.append(param.data.clone())
-    netG_param_ema.append(param.data.clone())
+z_examples = utils.sample(DISTRIBUTION, (100, N_LATENT))
+if CUDA:
+    z_examples = z_examples.cuda(0)
 
-iters = 0
+gen_param_avg = []
+gen_param_ema = []
+for param in gen.parameters():
+    gen_param_avg.append(param.data.clone())
+    gen_param_ema.append(param.data.clone())
 
-print('Starting Training Loop...')
-# For each epoch
-for epoch in range(NUM_EPOCH):
-    # For each batch in the dataloader
-    for i, data in enumerate(trainloader, 0): # data contains x and y
+f = open(os.path.join(OUTPUT_PATH, 'results.csv'), 'ab')
+f_writter = csv.writer(f)
 
-        ############################
-        # (1) Update D network: 
-        ###########################
-        ## Train with all-real batch
-        netD.zero_grad()
-        # Format batch
-        real_cpu = data[0].to(device)
-        b_size = real_cpu.size(0)
-        label = torch.full((b_size,), real_label, device=device)
-        # Forward pass real batch through D
-        output = netD(real_cpu).view(-1)
-        # Calculate loss on all-real batch
-        errD_real = criterion(output, label)
-        # Calculate gradients for D in backward pass
-        errD_real.backward()
-        D_x = output.mean().item()
+print 'Training...'
+n_iteration_t = 0
+gen_inception_score = 0
+while n_gen_update < N_ITER:
+    t = time.time()
+    avg_loss_G = 0
+    avg_loss_D = 0
+    avg_penalty = 0
+    num_samples = 0
+    penalty = Variable(torch.Tensor([0.]))
+    if CUDA:
+        penalty = penalty.cuda(0)
+    for i, data in enumerate(trainloader):
+        _t = time.time()
+        x_true, _ = data
+        x_true = Variable(x_true)
+
+        z = Variable(utils.sample(DISTRIBUTION, (len(x_true), N_LATENT)))
+        if CUDA:
+            x_true = x_true.cuda(0)
+            z = z.cuda(0)
+
+        x_gen = gen(z)
+        p_true, p_gen = dis(x_true), dis(x_gen)
+
+        gen_loss = utils.compute_gan_loss(p_true, p_gen, mode=MODE)
+        dis_loss = - gen_loss.clone()
+        if GRADIENT_PENALTY:
+            penalty = dis.get_penalty(x_true.data, x_gen.data)
+            dis_loss += GRADIENT_PENALTY*penalty
+
+        for p in gen.parameters():
+            p.requires_grad = False
+            
+        dis_optimizer.zero_grad()
+        dis_loss.backward(retain_graph=True)
         
-        ## Train with all-fake batch
-        # Generate batch of latent vectors
-        noise = torch.randn(b_size, NUM_LATENT, 1, 1, device=device)
-        # Generate fake image batch with G
-        fake = netG(noise)
-        label.fill_(fake_label)
-        # Classify all fake batch with D
-        output = netD(fake.detach()).view(-1) # Has to detach to avoid backpropagate!!!!!!
-        # Calculate D's loss on the all-fake batch
-        errD_fake = criterion(output, label)
-        # Calculate the gradients for this batch
-        errD_fake.backward()
-        D_G_z1 = output.mean().item()
-        # Add the gradients from the all-real and all-fake batches
-        errD = errD_real + errD_fake
-        # Update D
-        # https://stackoverflow.com/questions/20002503/why-does-a-b-or-c-or-d-always-evaluate-to-true
-        if ALG == 'ExtraSGD' or ALG == 'ExtraAdam':
-            if (i+1)%2:
-                optD.extrapolation()
+        if ALGORITHM == 'ExtraAdam':
+            if (n_iteration_t+1)%2 != 0:
+                dis_optimizer.extrapolation()
             else:
-                optD.step()
+                dis_optimizer.step()
+                n_dis_update += 1
         else:
-            optD.step()
-        
-        ############################
-        # (2) Update G network: 
-        ###########################
-        netG.zero_grad()
-        label.fill_(real_label)  # fake labels are real for generator cost
-        # Since we just updated D, perform another forward pass of all-fake batch through D
-        output = netD(fake).view(-1) # view -1 to reshape output as a 1-dim tensor
-        # Calculate G's loss based on this output
-        errG = criterion(output, label)
-        # Calculate gradients for G
-        errG.backward()
-        D_G_z2 = output.mean().item()
-        # Update G
-        if ALG == 'ExtraSGD' or ALG == 'ExtraAdam':
-            if (i+1)%2:
-                optG.extrapolation()
-            else:
-                optG.step()
-                iters += 1
-        else:
-            optG.step()
-            iters += 1
-        
-        for j, param in enumerate(netG.parameters()):
-                netG_param_avg[j] = netG_param_avg[j]*iters/(iters+1.) + param.data.clone()/(iters+1.)
-                netG_param_ema[j] = netG_param_ema[j]*BETA_EMA+ param.data.clone()*(1-BETA_EMA)
-        
-        # Output training stats
-        if i % 10 == 0: 
-            if VERBOSE:
-                print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f' 
-                      % (epoch, NUM_EPOCH, i, len(trainloader), errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
-            loss_writter.writerow((errD.item(), errG.item()))
-            loss_f.flush()
-    if INCEPTION_SCORE_FLAG or FID_SCORE_FLAG:
-        fake_imgs = netG(fixed_noise).detach().cpu()
-    if INCEPTION_SCORE_FLAG:
-        inception_writter.writerow(lib.get_inception_score(fake_imgs))
-        inception_f.flush()
-    if FID_SCORE_FLAG:
-        fid_writter.writerow([lib.get_fid_score(fake_imgs)])
-        fid_f.flush()
+            dis_optimizer.step()
+            n_dis_update += 1
+        if MODE =='wgan' and not GRADIENT_PENALTY:
+            for p in dis.parameters():
+                p.data.clamp_(-CLIP, CLIP)
                 
-    if SAVE_FLAG:    
-        #https://stackoverflow.com/questions/42703500/best-way-to-save-a-trained-models-in-pytorch
-        torch.save({'args': vars(args), 'state_gen': netG.state_dict(), 'param_avg': netG_param_avg, 'param_ema': netG_param_ema}, os.path.join(OUTPUT_PATH, 'checkpoints/gen-%i.state'%epoch))
-        torch.save({'args': vars(args), 'state_dis': netD.state_dict()}, os.path.join(OUTPUT_PATH, 'checkpoints/dis-%i.state'%epoch))
+        for p in gen.parameters():
+            p.requires_grad = True
+        
+        for p in dis.parameters():
+            p.requires_grad = False
+        gen_optimizer.zero_grad()
+        gen_loss.backward()
+        if ALGORITHM == 'ExtraAdam':
+            if (n_iteration_t+1)%2 != 0:
+                gen_optimizer.extrapolation()
+            else:
+                gen_optimizer.step()
+                n_gen_update += 1
+                for j, param in enumerate(gen.parameters()):
+                    gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + param.data.clone()/(n_gen_update+1.)
+                    gen_param_ema[j] = gen_param_ema[j]*BETA_EMA+ param.data.clone()*(1-BETA_EMA)
+        else:
+            gen_optimizer.step()
+            n_gen_update += 1
+            for j, param in enumerate(gen.parameters()):
+                gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + param.data.clone()/(n_gen_update+1.)
+                gen_param_ema[j] = gen_param_ema[j]*BETA_EMA+ param.data.clone()*(1-BETA_EMA)
+                
+        for p in dis.parameters():
+            p.requires_grad = True
+
+        total_time += time.time() - _t
+
+        avg_loss_D += dis_loss.item()*len(x_true)
+        avg_loss_G += gen_loss.item()*len(x_true)
+        avg_penalty += penalty.item()*len(x_true)
+        num_samples += len(x_true)
+
+        if n_gen_update%EVAL_FREQ == 0:
+            if INCEPTION_SCORE_FLAG or FID_SCORE_FLAG:
+                fake_imgs = gen(z_examples).detach()#.cpu()
+            if INCEPTION_SCORE_FLAG:
+                inception_score = lib.get_inception_score(fake_imgs,cuda=CUDA)
+                inception_writter.writerow(inception_score)
+                inception_f.flush()
+            if FID_SCORE_FLAG:
+                fid_score = lib.get_fid_score(fake_imgs,cuda=CUDA)
+                fid_writter.writerow([fid_score])
+                fid_f.flush()
+            
+            if SAVE_FLAG:    
+                #https://stackoverflow.com/questions/42703500/best-way-to-save-a-trained-models-in-pytorch
+                torch.save({'args': vars(args), 'n_gen_update': n_gen_update, 'total_time': total_time, 'state_gen': gen.state_dict(), 'gen_param_avg': gen_param_avg, 'gen_param_ema': gen_param_ema}, os.path.join(OUTPUT_PATH, "checkpoints/%i.state"%n_gen_update))
+                torch.save({'args': vars(args), 'state_dis': dis.state_dict()}, os.path.join(OUTPUT_PATH, 'checkpoints/dis-%i.state'%n_dis_update))
+
+        n_iteration_t += 1
+        
+    avg_loss_G /= num_samples
+    avg_loss_D /= num_samples
+    avg_penalty /= num_samples
+
+    print('Iter: %i, Loss Generator: %.4f, Loss Discriminator: %.4f, Penalty: %.2e, Time: %.4f'%(n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
+
+    f_writter.writerow((n_gen_update, avg_loss_G, avg_loss_D, avg_penalty, time.time() - t))
+    f.flush()
+
+    x_gen = gen(z_examples)
+    x = utils.unormalize(x_gen)
+    torchvision.utils.save_image(x.data, os.path.join(OUTPUT_PATH, 'gen/%i.png' % n_gen_update), 10)
