@@ -41,8 +41,8 @@ parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFo
 parser.add_argument('--model', choices=('resnet', 'dcgan'), default='dcgan')
 parser.add_argument('-alg', '--algorithm', choices=('Adam','ExtraAdam','OptimisticAdam'), default='Adam')
 parser.add_argument('--cuda', action='store_true')
-parser.add_argument('-bs' ,'--batch-size', default=4, type=int)
-parser.add_argument('--num-iter', default=500, type=int)
+parser.add_argument('-bs' ,'--batch-size', default=64, type=int)
+parser.add_argument('--num-iter', default=500000, type=int)
 parser.add_argument('-lrd', '--learning-rate-dis', default=2e-4, type=float)
 parser.add_argument('-lrg', '--learning-rate-gen', default=2e-5, type=float)
 parser.add_argument('-b1' ,'--beta1', default=0.5, type=float)
@@ -100,10 +100,10 @@ CLIP = args.clip
 DISTRIBUTION = args.distribution
 BATCH_NORM_G = True
 BATCH_NORM_D = args.batchnorm_dis
-N_SAMPLES = 100
+N_SAMPLES = 50000
 N_CHANNEL = 3
 START_EPOCH = 0
-EVAL_FREQ = 1
+EVAL_FREQ = 10000
 SEED = args.seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
