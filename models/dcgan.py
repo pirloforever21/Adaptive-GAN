@@ -1,72 +1,100 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Jun 13 13:28:23 2019
+#  MIT License
 
-@author: yangzhenhuan
+# Copyright (c) Facebook, Inc. and its affiliates.
 
-Define the Deep Convolutional Generative Adversarial Network class
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
 
-nc - Number of channels in the training images. For color images this is 3
-nz - Size of z latent vector (i.e. size of generator input)
-nfg - Size of feature maps in generator
-nfd - Size of feature maps in discriminator
-"""
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# written by Hugo Berard (berard.hugo@gmail.com) while at Facebook.
+
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from .discriminator import Discriminator
 
-class Generator(nn.Module):
-    def __init__(self, nc=3, nz=100, nfg=64):
-        super(Generator, self).__init__()
-        self.main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose2d( nz, nfg * 8, 4, 1, 0, bias=False),
-            nn.BatchNorm2d(nfg * 8),
-            nn.ReLU(True),
-            # state size. (nfg*8) x 4 x 4
-            nn.ConvTranspose2d(nfg * 8, nfg * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(nfg * 4),
-            nn.ReLU(True),
-            # state size. (nfg*4) x 8 x 8
-            nn.ConvTranspose2d( nfg * 4, nfg * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(nfg * 2),
-            nn.ReLU(True),
-            # state size. (nfg*2) x 16 x 16
-            nn.ConvTranspose2d( nfg * 2, nfg, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(nfg),
-            nn.ReLU(True),
-            # state size. (nfg) x 32 x 32
-            nn.ConvTranspose2d( nfg, nc, 4, 2, 1, bias=False),
-            nn.Tanh()
-            # state size. (nc) x 64 x 64
-        )
+class DCGAN32Generator(nn.Module):
+    def __init__(self, n_in, n_out, n_filters=128, activation=F.relu, batchnorm=True):
+        super(DCGAN32Generator, self).__init__()
 
-    def forward(self, input):
-        return self.main(input)
+        self.n_in = n_in
+        self.n_filters = n_filters
+        self.activation = activation
+        self.batchnorm = batchnorm
+        
+        # input * output
+        self.deconv1 = nn.Linear(n_in, n_filters*4*4*4) 
+        self.deconv1_bn = nn.BatchNorm1d(n_filters*4*4*4)
+        # input_channel * output_channel * kernel_size * stride * padding
+        self.deconv2 = nn.ConvTranspose2d(n_filters*4, n_filters*2, 4, 2, 1) 
+        self.deconv2_bn = nn.BatchNorm2d(n_filters*2)
+        self.deconv3 = nn.ConvTranspose2d(n_filters*2, n_filters, 4, 2, 1)
+        self.deconv3_bn = nn.BatchNorm2d(n_filters)
+        self.deconv5 = nn.ConvTranspose2d(n_filters, n_out, 4, 2, 1)
 
-class Discriminator(nn.Module):
-    def __init__(self, nc=3, nfd=64):
-        super(Discriminator, self).__init__()
-        self.main = nn.Sequential(
-            # input is (nc) x 64 x 64
-            nn.Conv2d(nc, nfd, 4, 2, 1, bias=False),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (nfd) x 32 x 32
-            nn.Conv2d(nfd, nfd * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(nfd * 2),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (nfd*2) x 16 x 16
-            nn.Conv2d(nfd * 2, nfd * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(nfd * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (nfd*4) x 8 x 8
-            nn.Conv2d(nfd * 4, nfd * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(nfd * 8),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (nfd*8) x 4 x 4
-            nn.Conv2d(nfd * 8, 1, 4, 1, 0, bias=False),
-            nn.Sigmoid()
-        )
+    def forward(self, z):
+        x = self.deconv1(z)
+        if self.batchnorm:
+            x = self.deconv1_bn(x)
+        # batch * input_channel * length * width
+        x = self.activation(x).view(-1,self.n_filters*4,4,4)
 
-    def forward(self, input):
-        return self.main(input)
+        x = self.deconv2(x)
+        if self.batchnorm:
+            x = self.deconv2_bn(x)
+        x = self.activation(x)
+
+        x = self.deconv3(x)
+        if self.batchnorm:
+            x = self.deconv3_bn(x)
+        x = self.activation(x)
+
+        x = torch.tanh(self.deconv5(x))
+
+        return x
+
+class DCGAN32Discriminator(Discriminator):
+    def __init__(self, n_in, n_out, n_filters=128, activation=F.leaky_relu, batchnorm=True):
+        super(DCGAN32Discriminator, self).__init__()
+
+        self.n_filters = n_filters
+        self.activation = activation
+        self.batchnorm = batchnorm
+
+        self.conv1 = nn.Conv2d(n_in, n_filters, 4, 2, 1)
+        self.conv2 = nn.Conv2d(n_filters, n_filters*2, 4, 2, 1)
+        self.conv2_bn = nn.BatchNorm2d(n_filters*2)
+        self.conv3 = nn.Conv2d(n_filters*2, n_filters*4, 4, 2, 1)
+        self.conv3_bn = nn.BatchNorm2d(n_filters*4)
+        self.conv5 = nn.Linear(n_filters*4*4*4, 1)
+
+    def forward(self, x):
+        x = self.activation(self.conv1(x))
+
+        x = self.conv2(x)
+        if self.batchnorm:
+            x = self.conv2_bn(x)
+        x = self.activation(x)
+
+        x = self.conv3(x)
+        if self.batchnorm:
+            x = self.conv3_bn(x)
+        x = self.activation(x).view(-1, self.n_filters*4*4*4)
+
+        x = self.conv5(x)
+
+        return x
