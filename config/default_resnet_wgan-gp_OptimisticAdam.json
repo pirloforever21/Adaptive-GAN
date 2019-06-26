@@ -1,0 +1,21 @@
+{
+   "batch_size":64,
+   "model":"resnet",
+   "num_iter":500000,
+   "beta2":0.9,
+   "ema":0.9999,
+   "num_latent":128,
+   "batchnorm_dis":false,
+   "optimizer":"adam",
+   "clip":0.01,
+   "gradient_penalty":10,
+   "mode":"wgan",
+   "seed":1318,
+   "beta1":0.5,
+   "learning_rate_dis":2e-04,
+   "distribution":"normal",
+   "initialization":"normal",
+   "learning_rate_gen":2e-05,
+   "num_filters_gen":128,
+   "num_filters_dis":128
+}
