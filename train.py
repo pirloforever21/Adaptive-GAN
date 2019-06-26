@@ -37,7 +37,7 @@ import models
 import utils
 import lib
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--model', choices=('resnet', 'dcgan'), default='dcgan')
 parser.add_argument('-alg', '--algorithm', choices=('Adam','ExtraAdam','OptimisticAdam'), default='Adam')
 parser.add_argument('--cuda', action='store_true')
