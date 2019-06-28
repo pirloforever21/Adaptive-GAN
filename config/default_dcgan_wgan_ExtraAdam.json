@@ -1,7 +1,7 @@
 {
    "batch_size":64,
    "model":"dcgan",
-   "num_iter":5000000,
+   "num_iter":500000,
    "beta2":0.9,
    "ema":0.999,
    "num_latent":128,
