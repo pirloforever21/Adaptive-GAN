@@ -161,6 +161,10 @@ elif ALGORITHM == 'ExtraAdam':
     import optim
     dis_optimizer = optim.ExtraAdam(dis.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
     gen_optimizer = optim.ExtraAdam(gen.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
+elif ALGORITHM == 'OptimisticAdam':
+    import optim
+    dis_optimizer = optim.OptimisticAdam(dis.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
+    gen_optimizer = optim.OptimisticAdam(gen.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
 
 with open(os.path.join(OUTPUT_PATH, 'config.json'), 'wb') as f:
     json.dump(vars(args), f)
