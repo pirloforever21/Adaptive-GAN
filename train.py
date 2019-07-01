@@ -39,7 +39,7 @@ import lib
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--model', choices=('resnet', 'dcgan'), default='dcgan')
-parser.add_argument('-alg', '--algorithm', choices=('Adam','ExtraAdam','OptimisticAdam'), default='Adam')
+parser.add_argument('-alg', '--algorithm', choices=('SGD','ExtraSGD','OMD','Adam','ExtraAdam','OptimisticAdam'), default='Adam')
 parser.add_argument('--cuda', action='store_true')
 parser.add_argument('-bs' ,'--batch-size', default=64, type=int)
 parser.add_argument('--num-iter', default=500000, type=int)
@@ -165,6 +165,18 @@ elif ALGORITHM == 'OptimisticAdam':
     import optim
     dis_optimizer = optim.OptimisticAdam(dis.parameters(), lr=LEARNING_RATE_D, betas=(BETA_1, BETA_2))
     gen_optimizer = optim.OptimisticAdam(gen.parameters(), lr=LEARNING_RATE_G, betas=(BETA_1, BETA_2))
+elif ALGORITHM =='SGD':
+    import torch.optim as optim
+    dis_optimizer = optim.SGD(dis.parameters(), lr=LEARNING_RATE_D)
+    gen_optimizer = optim.SGD(gen.parameters(), lr=LEARNING_RATE_G)
+elif ALGORITHM == 'ExtraSGD':
+    import optim
+    dis_optimizer = optim.ExtraSGD(dis.parameters(), lr=LEARNING_RATE_D)
+    gen_optimizer = optim.ExtraSGD(gen.parameters(), lr=LEARNING_RATE_G)
+elif ALGORITHM == 'OMD':
+    import optim
+    dis_optimizer = optim.OMD(dis.parameters(), lr=LEARNING_RATE_D)
+    gen_optimizer = optim.OMD(gen.parameters(), lr=LEARNING_RATE_G)
 
 with open(os.path.join(OUTPUT_PATH, 'config.json'), 'wb') as f:
     json.dump(vars(args), f)
@@ -223,7 +235,7 @@ while n_gen_update < N_ITER:
         dis_optimizer.zero_grad()
         dis_loss.backward(retain_graph=True)
         
-        if ALGORITHM == 'ExtraAdam':
+        if ALGORITHM == 'ExtraAdam' or ALGORITHM == 'ExtraSGD':
             if (n_iteration_t+1)%2 != 0:
                 dis_optimizer.extrapolation()
             else:
@@ -243,7 +255,7 @@ while n_gen_update < N_ITER:
             p.requires_grad = False
         gen_optimizer.zero_grad()
         gen_loss.backward()
-        if ALGORITHM == 'ExtraAdam':
+        if ALGORITHM == 'ExtraAdam' or ALGORITHM == 'ExtraSGD':
             if (n_iteration_t+1)%2 != 0:
                 gen_optimizer.extrapolation()
             else:
