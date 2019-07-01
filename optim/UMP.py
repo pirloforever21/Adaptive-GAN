@@ -62,15 +62,14 @@ class UMP(Optimizer):
         
         state = self.state[p] # state of inside p
         state['step'] += 1/2 # perform both extrapolation and step as a whole step
-        print(state['step'])
+
         if group['weight_decay'] != 0:
             grad = grad.add(group['weight_decay'], p.data)
         
         clr = group['lr'] / (1 + (state['step'] - 1) * group['lr_decay'])
         
         std = state['sum'].sqrt().add_(1e-10)
-        print(clr)
-        print(std)
+
         return clr / std
         
     def extrapolation(self):
