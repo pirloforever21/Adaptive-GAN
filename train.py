@@ -177,6 +177,10 @@ elif ALGORITHM == 'OMD':
     import optim
     dis_optimizer = optim.OMD(dis.parameters(), lr=LEARNING_RATE_D)
     gen_optimizer = optim.OMD(gen.parameters(), lr=LEARNING_RATE_G)
+elif ALGORITHM == 'UMP':
+    import optim
+    dis_optimizer = optim.UMP(dis.parameters(), lr=LEARNING_RATE_D)
+    gen_optimizer = optim.UMP(gen.parameters(), lr=LEARNING_RATE_G)
 
 with open(os.path.join(OUTPUT_PATH, 'config.json'), 'wb') as f:
     json.dump(vars(args), f)
@@ -235,7 +239,7 @@ while n_gen_update < N_ITER:
         dis_optimizer.zero_grad()
         dis_loss.backward(retain_graph=True)
         
-        if ALGORITHM == 'ExtraAdam' or ALGORITHM == 'ExtraSGD':
+        if ALGORITHM == 'ExtraAdam' or ALGORITHM == 'ExtraSGD' or ALGORITHM == 'UMP':
             if (n_iteration_t+1)%2 != 0:
                 dis_optimizer.extrapolation()
             else:
@@ -255,7 +259,7 @@ while n_gen_update < N_ITER:
             p.requires_grad = False
         gen_optimizer.zero_grad()
         gen_loss.backward()
-        if ALGORITHM == 'ExtraAdam' or ALGORITHM == 'ExtraSGD':
+        if ALGORITHM == 'ExtraAdam' or ALGORITHM == 'ExtraSGD' or ALGORITHM == 'UMP':
             if (n_iteration_t+1)%2 != 0:
                 gen_optimizer.extrapolation()
             else:
