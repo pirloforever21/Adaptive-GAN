@@ -1,11 +1,6 @@
-# Code for a [A Variational Inequality Perspective for Generative Adversarial Networks](https://arxiv.org/abs/1802.10551)
+# Code for Adaptive and Extragradient Algorithm on GAN
 
-This is the code associated with the paper [A Variational Inequality Perspective for Generative Adversarial Networks](https://arxiv.org/abs/1802.10551).
-If you find this code useful please cite as:
-
-**Gauthier Gidel, Hugo Berard, Gaetan Vignoud, Pascal Vincent, Simon Lacoste-Julien, [A Variational Inequality Perspective on Generative Adversarial Networks](https://arxiv.org/abs/1802.10551), International Conference on Learning Representations (ICLR 2019), 2019.**
-
-Code mostly written by Hugo Berard while at Facebook AI Research, for any questions about the code please contact (berard.hugo@gmail.com)
+This is the code associated with the paper [A Variational Inequality Perspective for Generative Adversarial Networks](https://arxiv.org/abs/1802.10551) and [A Universal Algorithm for Variational Inequalities Adaptive to Smoothness and Noise](https://arxiv.org/abs/1902.01637).
 
 ## Requirements
 
