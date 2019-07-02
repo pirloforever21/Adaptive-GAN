@@ -37,7 +37,7 @@ parser.add_argument('--inception-score', action='store_true')
 parser.add_argument('--fid-score', action='store_true')
 parser.add_argument('--default', action='store_true')
 parser.add_argument('--save', action='store_true')
-args = parser.parse_args(['-alg','UMP'])
+args = parser.parse_args()
 
 CUDA = args.cuda
 ALGORITHM = args.algorithm
