@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Jul  1 11:05:00 2019
-
 @author: neyozhyang
 """
 
@@ -12,16 +11,13 @@ from torch.optim import Optimizer
 
 class UMP(Optimizer):
     """Implement Universal Mirror Prox Algorithm by Francis Bach and Kfir Y. Levy
-
     It has been proposed in `A Universal Algorithm for Variational Inequalities Adaptive to Smoothness and Noise`_.
-
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining
             parameter groups
         lr (float, optional): learning rate (default: 1e-2)
         lr_decay (float, optional): learning rate decay (default: 0)
         weight_decay (float, optional): weight decay (L2 penalty) (default: 0)
-
     .. _Adaptive Subgradient Methods for Online Learning and Stochastic
         Optimization: http://jmlr.org/papers/v12/duchi11a.html
     """
@@ -92,7 +88,6 @@ class UMP(Optimizer):
 
     def step(self, closure=None):
         """Performs a single optimization step.
-
         Arguments:
             closure (callable, optional): A closure that reevaluates the model
                 and returns the loss.
@@ -105,13 +100,14 @@ class UMP(Optimizer):
             loss = closure()
         
         i = -1
+        j = -1
         for group in self.param_groups:
             for p in group['params']:
                 
                 i += 1
                 if p.grad is None:
                     continue
-                
+                j += 1
                 grad = p.grad.data
                 
                 state = self.state[p] # state of outside p
@@ -126,8 +122,8 @@ class UMP(Optimizer):
                 # Update the parameters saved during the extrapolation step
                 p.data = self.params_copy[i].addcmul_(-clr, grad, std)
                 
-                state['sum'].addcmul_(1 / 5, self.grads_copy[i] - grad, self.grads_copy[i] - grad)
-                state['sum'].addcmul_(1 / 5, self.grads_copy[i], self.grads_copy[i])
+                state['sum'].addcmul_(1 / 5, self.grads_copy[j] - grad, self.grads_copy[j] - grad)
+                state['sum'].addcmul_(1 / 5, self.grads_copy[j], self.grads_copy[j])
                 
                 
         # Free the old parameters
