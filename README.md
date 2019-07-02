@@ -26,19 +26,12 @@ for i, input, target in enumerate(dataset):
 
 ## Experiments
 
-To run the WGAN-GP experiment with Universal
-
-To run the WGAN-GP experiment with ExtraAdam and the ResNet architecture on CIFAR10 with the parameters from the paper:
-`python train_extraadam.py results\ --default --model resnet --cuda`
+To run the WGAN-GP experiment with UMP and the DCGAN architecture on CIFAR10:
+`python train.py -alg UMP --model dcgan --cuda`
 
 The `--default` option loads the hyperparameters used in the paper for each experiments, they are available as JSON files in the `config` folder.
 
 The weights for our WGAN-GP and ResNet model trained with ExtraAdam is available in the `results` folder.
-
-For evaluation:
-`python eval_inception_score.py results/ExtraAdam/best_model.state`
-
-A `ipython` notebook is also available for the bilinear example [here](bilinear_wgan.ipynb).
 
 ## Results
 with Averaging:
