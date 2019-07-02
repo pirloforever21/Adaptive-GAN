@@ -53,24 +53,6 @@ class UMP(Optimizer):
             for p in group['params']:
                 state = self.state[p]
                 state['sum'].share_memory_()
-                
-    def update(self, p, group):
-        if p.grad is None:
-            return None
-        
-        grad = p.grad.data
-        
-        state = self.state[p] # state of inside p
-        state['step'] += 1/2 # perform both extrapolation and step as a whole step
-
-        if group['weight_decay'] != 0:
-            grad = grad.add(group['weight_decay'], p.data)
-        
-        clr = group['lr'] / (1 + (state['step'] - 1) * group['lr_decay'])
-        
-        std = state['sum'].sqrt().add_(1e-10)
-
-        return clr / std
         
     def extrapolation(self):
         """Performs the extrapolation step and save a copy of the current parameters for the update step.
@@ -79,21 +61,34 @@ class UMP(Optimizer):
         is_params_empty = len(self.params_copy) == 0
         is_grads_empty = len(self.grads_copy) == 0
         
-        i = -1
         for group in self.param_groups:
             for p in group['params']:
-                u = self.update(p, group) # return by self-defined update function depending on the algorithm
+                
                 if is_params_empty:
                     # Save the current parameters for the update step. 
                     # Several extrapolation step can be made before each update but only the parameters before the first extrapolation step are saved.
                     self.params_copy.append(p.data.clone())
+                    
+                if p.grad is None:
+                    continue
+                    
+                grad = p.grad.data
+                
                 if is_grads_empty:
                     self.grads_copy.append(p.grad.data.clone())
-                if u is None:
-                    continue
+                
+                state = self.state[p]
+                state['step'] += 1
+                
+                if group['weight_decay'] != 0:
+                    grad = grad.add(group['weight_decay'], p.data)
+                
+                clr = group['lr'] / (1 + (state['step'] - 1) * group['lr_decay'])
+                
+                std = state['sum'].sqrt().add_(1e-10)
+                
                 # Update the current parameters
-                i += 1
-                p.data.add_(u,self.grads_copy[i])
+                p.data.addcmul_(-clr, grad, std)
 
     def step(self, closure=None):
         """Performs a single optimization step.
@@ -113,17 +108,26 @@ class UMP(Optimizer):
         for group in self.param_groups:
             for p in group['params']:
                 
+                i += 1
+                if p.grad is None:
+                    continue
+                
+                grad = p.grad.data
+                
                 state = self.state[p] # state of outside p
                 
-                i += 1
-                u = self.update(p, group)
-                if u is None:
-                    continue
-                # Update the parameters saved during the extrapolation step
-                p.data = self.params_copy[i].add_(-float(u),p.grad.data)
+                if group['weight_decay'] != 0:
+                    grad = grad.add(group['weight_decay'], p.data)
                 
-                state['sum'].addcmul_(1 / (5 * u**2), self.grads_copy[i] - u, self.grads_copy[i] - u)
-                state['sum'].addcmul_(1 / (5 * u**2), self.grads_copy[i], self.grads_copy[i])
+                clr = group['lr'] / (1 + (state['step'] - 1) * group['lr_decay'])
+                
+                std = state['sum'].sqrt().add_(1e-10)
+                
+                # Update the parameters saved during the extrapolation step
+                p.data = self.params_copy[i].addcmul_(-clr, grad, std)
+                
+                state['sum'].addcmul_(1 / 5, self.grads_copy[i] - grad, self.grads_copy[i] - grad)
+                state['sum'].addcmul_(1 / 5, self.grads_copy[i], self.grads_copy[i])
                 
                 
         # Free the old parameters
