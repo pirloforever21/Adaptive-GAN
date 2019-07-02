@@ -1,6 +1,6 @@
 # Code for Adaptive and Extragradient Algorithms on GAN
 
-This is the code associated with the paper [A Universal Algorithm for Variational Inequalities Adaptive to Smoothness and Noise](https://arxiv.org/abs/1902.01637) and the proposed algortihm Universal Mirror Prox(UMP).
+This is the code associated with the paper [A Universal Algorithm for Variational Inequalities Adaptive to Smoothness and Noise](https://arxiv.org/abs/1902.01637) by Francis Bach and Kfir Y.Levy, and the proposed algortihm Universal Mirror Prox(UMP) in Euclidean space.
 
 ## Requirements
 
