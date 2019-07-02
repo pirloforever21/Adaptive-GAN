@@ -24,6 +24,8 @@ for i, input, target in enumerate(dataset):
       UMP.step()
 ```
 
+Note the averaging is taken at the `extrapolation` step.
+
 ## Experiments
 
 To run the WGAN-GP experiment with UMP and the DCGAN architecture on CIFAR10:
