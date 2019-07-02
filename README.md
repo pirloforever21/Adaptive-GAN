@@ -1,47 +1,32 @@
-# Code for Adaptive and Extragradient Algorithm on GAN
+# Code for Adaptive and Extragradient Algorithms on GAN
 
-This is the code associated with the paper [A Variational Inequality Perspective for Generative Adversarial Networks](https://arxiv.org/abs/1802.10551) and [A Universal Algorithm for Variational Inequalities Adaptive to Smoothness and Noise](https://arxiv.org/abs/1902.01637).
+This is the code associated with the paper [A Universal Algorithm for Variational Inequalities Adaptive to Smoothness and Noise](https://arxiv.org/abs/1902.01637) and the proposed algortihm Universal Mirror Prox(UMP).
 
 ## Requirements
 
 The code is in `pytorch` and was tested for:
 - pytorch=0.4.0
 
-(Optional) The inception score is computed using the original implementation from OpenAI [](https://github.com/openai/improved-gan/tree/master/inception_score), and thus requires `tensorflow` <= 1.5.0 to be installed.
+## `class UMP`
 
-A conda environement is also provided (requires CUDA 9):
-`conda env create -f environment.yml`
+The UMP method is packaged as a `torch.optim.Optimizer` with an additional method `extrapolation()`. 
 
-## `class Extragradient`
-
-The extragradient method is packaged as a `torch.optim.Optimizer` with an additional method `extrapolation()`. Two variants are available `ExtraSGD` and `ExtraAdam`.
-
-Example of how to run `Extragradient`:
+Example of how to run `UMP`:
 ```python
 for i, input, target in enumerate(dataset):
-    Extragradient.zero_grad()
+    UMP.zero_grad()
     output = model(input)
     loss = loss_fn(output, target)
     loss.backward()
     if i%2:
-      Extragradient.extrapolation()
+      UMP.extrapolation()
     else:
-      Extragradient.step()
+      UMP.step()
 ```
-
-Example of how to run `Extragradient` from the past:
-```python
-for i, input, target in enumerate(dataset):
-    PastExtragradient.extrapolation()
-    PastExtragradient.zero_grad()
-    output = model(input)
-    loss = loss_fn(output, target)
-    loss.backward()
-    PastExtragradient.step()
-```
-Note that for `Extragradient` from the past the extrapolation is done before computing the forward and the backward pass.
 
 ## Experiments
+
+To run the WGAN-GP experiment with Universal
 
 To run the WGAN-GP experiment with ExtraAdam and the ResNet architecture on CIFAR10 with the parameters from the paper:
 `python train_extraadam.py results\ --default --model resnet --cuda`
