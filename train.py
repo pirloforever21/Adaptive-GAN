@@ -1,27 +1,3 @@
-#  MIT License
-
-# Copyright (c) Facebook, Inc. and its affiliates.
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-# written by Hugo Berard (berard.hugo@gmail.com) while at Facebook.
-
 import torch
 import time
 from torch.autograd import Variable
@@ -39,7 +15,7 @@ import lib
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--model', choices=('resnet', 'dcgan'), default='dcgan')
-parser.add_argument('-alg', '--algorithm', choices=('SGD','ExtraSGD','OMD','Adam','ExtraAdam','OptimisticAdam'), default='Adam')
+parser.add_argument('-alg', '--algorithm', choices=('SGD','ExtraSGD','OMD','Adam','ExtraAdam','OptimisticAdam','UMP'), default='Adam')
 parser.add_argument('--cuda', action='store_true')
 parser.add_argument('-bs' ,'--batch-size', default=64, type=int)
 parser.add_argument('--num-iter', default=500000, type=int)
@@ -61,7 +37,7 @@ parser.add_argument('--inception-score', action='store_true')
 parser.add_argument('--fid-score', action='store_true')
 parser.add_argument('--default', action='store_true')
 parser.add_argument('--save', action='store_true')
-args = parser.parse_args()
+args = parser.parse_args(['-alg','UMP'])
 
 CUDA = args.cuda
 ALGORITHM = args.algorithm
@@ -179,8 +155,8 @@ elif ALGORITHM == 'OMD':
     gen_optimizer = optim.OMD(gen.parameters(), lr=LEARNING_RATE_G)
 elif ALGORITHM == 'UMP':
     import optim
-    dis_optimizer = optim.UMP(dis.parameters(), lr=LEARNING_RATE_D)
-    gen_optimizer = optim.UMP(gen.parameters(), lr=LEARNING_RATE_G)
+    dis_optimizer = optim.UMP(dis.parameters())
+    gen_optimizer = optim.UMP(gen.parameters())
 
 with open(os.path.join(OUTPUT_PATH, 'config.json'), 'wb') as f:
     json.dump(vars(args), f)
@@ -205,7 +181,7 @@ f_writter = csv.writer(f)
 print 'Training...'
 n_iteration_t = 0
 gen_inception_score = 0
-while n_gen_update < N_ITER:
+while n_gen_update < N_ITER:   
     t = time.time()
     avg_loss_G = 0
     avg_loss_D = 0
@@ -239,15 +215,22 @@ while n_gen_update < N_ITER:
         dis_optimizer.zero_grad()
         dis_loss.backward(retain_graph=True)
         
-        if ALGORITHM == 'ExtraAdam' or ALGORITHM == 'ExtraSGD' or ALGORITHM == 'UMP':
+        if ALGORITHM == 'ExtraAdam' or ALGORITHM == 'ExtraSGD':
             if (n_iteration_t+1)%2 != 0:
                 dis_optimizer.extrapolation()
             else:
                 dis_optimizer.step()
                 n_dis_update += 1
+        elif ALGORITHM == 'UMP':
+            if (n_iteration_t+1)%2 != 0:
+                dis_optimizer.extrapolation()
+                n_dis_update += 1
+            else:
+                dis_optimizer.step()
         else:
             dis_optimizer.step()
             n_dis_update += 1
+            
         if MODE =='wgan' and not GRADIENT_PENALTY:
             for p in dis.parameters():
                 p.data.clamp_(-CLIP, CLIP)
@@ -257,9 +240,10 @@ while n_gen_update < N_ITER:
         
         for p in dis.parameters():
             p.requires_grad = False
+            
         gen_optimizer.zero_grad()
         gen_loss.backward()
-        if ALGORITHM == 'ExtraAdam' or ALGORITHM == 'ExtraSGD' or ALGORITHM == 'UMP':
+        if ALGORITHM == 'ExtraAdam' or ALGORITHM == 'ExtraSGD':
             if (n_iteration_t+1)%2 != 0:
                 gen_optimizer.extrapolation()
             else:
@@ -268,6 +252,15 @@ while n_gen_update < N_ITER:
                 for j, param in enumerate(gen.parameters()):
                     gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + param.data.clone()/(n_gen_update+1.)
                     gen_param_ema[j] = gen_param_ema[j]*BETA_EMA+ param.data.clone()*(1-BETA_EMA)
+        elif ALGORITHM == 'UMP':
+            if (n_iteration_t+1)%2 != 0:
+                gen_optimizer.extrapolation()
+                n_gen_update += 1
+                for j, param in enumerate(gen.parameters()):
+                    gen_param_avg[j] = gen_param_avg[j]*n_gen_update/(n_gen_update+1.) + param.data.clone()/(n_gen_update+1.)
+                    gen_param_ema[j] = gen_param_ema[j]*BETA_EMA+ param.data.clone()*(1-BETA_EMA)
+            else:
+                gen_optimizer.step()
         else:
             gen_optimizer.step()
             n_gen_update += 1
