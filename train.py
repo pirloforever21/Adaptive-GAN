@@ -213,6 +213,7 @@ while n_gen_update < N_ITER:
             p.requires_grad = False
             
         dis_optimizer.zero_grad()
+        # https://github.com/pytorch/examples/issues/116
         dis_loss.backward(retain_graph=True)
         
         if ALGORITHM == 'ExtraAdam' or ALGORITHM == 'ExtraSGD':
